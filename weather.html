@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Weather Forecast</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts for a clean, modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Custom styles to complement Tailwind */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f9ff; /* sky-50 */
+        }
+        /* Gradient background for the main weather card */
+        .weather-card-gradient {
+            background: linear-gradient(135deg, #38bdf8, #0ea5e9); /* sky-400 to sky-500 */
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <!-- Header Section -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-900">Live Weather Forecast</h1>
+            <p class="mt-2 text-lg text-slate-600">Get the current weather and a 5-day forecast for any city.</p>
+        </header>
+
+        <!-- Search Bar Section -->
+        <div class="max-w-xl mx-auto mb-8">
+            <form id="search-form" class="flex items-center shadow-lg rounded-full bg-white overflow-hidden">
+                <input 
+                    type="text" 
+                    id="search-input"
+                    placeholder="Enter a city name..." 
+                    class="w-full py-3 px-6 text-lg text-slate-700 focus:outline-none"
+                >
+                <button 
+                    type="submit" 
+                    class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-6 transition-colors duration-300"
+                >
+                    Search
+                </button>
+            </form>
+        </div>
+
+        <!-- Weather Display Area -->
+        <main id="weather-container" class="space-y-8">
+            <!-- Initial message or error display -->
+            <div id="message-area" class="text-center text-slate-500 text-xl py-10">
+                <p>Enter a city to get started!</p>
+            </div>
+
+            <!-- Weather results container, hidden by default -->
+            <div id="weather-results" class="hidden space-y-8">
+                <!-- Current Weather Card -->
+                <section id="current-weather" class="weather-card-gradient text-white p-6 rounded-2xl shadow-xl"></section>
+                
+                <!-- 5-Day Forecast Section -->
+                <section id="forecast-weather">
+                    <h2 class="text-2xl font-bold text-slate-800 mb-4">5-Day Forecast</h2>
+                    <div id="forecast-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4"></div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- DOM Element Selection ---
+        const searchForm = document.getElementById('search-form');
+        const searchInput = document.getElementById('search-input');
+        const messageArea = document.getElementById('message-area');
+        const weatherResults = document.getElementById('weather-results');
+        const currentWeatherSection = document.getElementById('current-weather');
+        const forecastGrid = document.getElementById('forecast-grid');
+
+        // --- Event Listeners ---
+        searchForm.addEventListener('submit', handleSearch);
+
+        /**
+         * Handles the search form submission.
+         * @param {Event} e - The form submission event.
+         */
+        async function handleSearch(e) {
+            e.preventDefault();
+            const cityName = searchInput.value.trim();
+
+            if (!cityName) {
+                displayMessage('Please enter a city name.');
+                return;
+            }
+
+            displayLoading();
+            
+            try {
+                // Step 1: Get coordinates (latitude, longitude) for the city name.
+                const coords = await getCoordinates(cityName);
+                
+                // Step 2: Use coordinates to get weather data from the weather API.
+                const weatherData = await getWeatherData(coords.lat, coords.lon);
+                
+                // Step 3: Display the fetched weather data on the page.
+                displayWeather(weatherData, coords.displayName);
+
+            } catch (error) {
+                // If any step fails, display an error message.
+                console.error('Search Error:', error);
+                displayMessage(error.message);
+            }
+        }
+
+        /**
+         * Fetches latitude and longitude for a given city name using the free Nominatim Geocoding API.
+         * @param {string} city - The name of the city.
+         * @returns {Promise<object>} - A promise that resolves to an object with lat, lon, and displayName.
+         */
+        async function getCoordinates(city) {
+            const GEOCODE_API_URL = `https://nominatim.openstreetmap.org/search?city=${city}&format=json&limit=1`;
+            const response = await fetch(GEOCODE_API_URL);
+            const data = await response.json();
+
+            if (data.length === 0) {
+                throw new Error(`Could not find coordinates for "${city}". Please check the spelling or try a different city.`);
+            }
+
+            return {
+                lat: data[0].lat,
+                lon: data[0].lon,
+                displayName: data[0].display_name
+            };
+        }
+
+        /**
+         * Fetches weather data from the free Open-Meteo API using latitude and longitude.
+         * @param {number} lat - The latitude.
+         * @param {number} lon - The longitude.
+         * @returns {Promise<object>} - A promise that resolves to the weather data object.
+         */
+        async function getWeatherData(lat, lon) {
+            // This API URL is configured to get current weather and a 7-day daily forecast.
+            const WEATHER_API_URL = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`;
+            const response = await fetch(WEATHER_API_URL);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch weather data.');
+            }
+            
+            return await response.json();
+        }
+
+        /**
+         * Displays the fetched weather data on the UI.
+         * @param {object} data - The weather data from the API.
+         * @param {string} locationName - The display name of the location.
+         */
+        function displayWeather(data, locationName) {
+            messageArea.classList.add('hidden');
+            weatherResults.classList.remove('hidden');
+
+            // --- Display Current Weather ---
+            const current = data.current;
+            currentWeatherSection.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-3xl font-bold">${locationName.split(',')[0]}</h2>
+                        <p class="text-lg">Current Weather</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-6xl font-bold">${Math.round(current.temperature_2m)}°C</div>
+                        <div class="text-xl">${getWeatherDescription(current.weather_code)}</div>
+                    </div>
+                </div>
+            `;
+
+            // --- Display 5-Day Forecast ---
+            const daily = data.daily;
+            forecastGrid.innerHTML = ''; // Clear previous forecast
+            
+            // Loop for the next 5 days (indices 0 to 4)
+            for (let i = 0; i < 5; i++) {
+                const forecastDay = document.createElement('div');
+                forecastDay.className = 'bg-white p-4 rounded-lg shadow-md text-center transform hover:-translate-y-1 transition-transform duration-200';
+                
+                const date = new Date(daily.time[i]);
+                // Get the short day name (e.g., 'Mon', 'Tue')
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+                forecastDay.innerHTML = `
+                    <p class="font-bold text-lg">${dayName}</p>
+                    <p class="text-4xl my-2">${getWeatherIcon(daily.weather_code[i])}</p>
+                    <p class="font-semibold text-slate-800">${Math.round(daily.temperature_2m_max[i])}°</p>
+                    <p class="text-slate-500">${Math.round(daily.temperature_2m_min[i])}°</p>
+                `;
+                forecastGrid.appendChild(forecastDay);
+            }
+        }
+
+        // --- Utility Functions ---
+
+        /** Displays a message in the message area. */
+        function displayMessage(message) {
+            weatherResults.classList.add('hidden');
+            messageArea.classList.remove('hidden');
+            messageArea.innerHTML = `<p class="bg-red-100 text-red-700 p-4 rounded-lg">${message}</p>`;
+        }
+
+        /** Displays a loading spinner/message. */
+        function displayLoading() {
+            weatherResults.classList.add('hidden');
+            messageArea.classList.remove('hidden');
+            messageArea.innerHTML = `
+                <div class="flex justify-center items-center text-slate-500">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-500"></div>
+                    <span class="ml-4 text-xl">Fetching weather...</span>
+                </div>
+            `;
+        }
+
+        /**
+         * Maps WMO weather codes to descriptive text.
+         * @param {number} code - The WMO weather code from the API.
+         * @returns {string} - The weather description.
+         */
+        function getWeatherDescription(code) {
+            const descriptions = {
+                0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+                45: 'Fog', 48: 'Rime fog',
+                51: 'Light drizzle', 53: 'Drizzle', 55: 'Dense drizzle',
+                61: 'Slight rain', 63: 'Rain', 65: 'Heavy rain',
+                71: 'Slight snow', 73: 'Snow', 75: 'Heavy snow',
+                80: 'Rain showers', 81: 'Rain showers', 82: 'Violent showers',
+                95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm'
+            };
+            return descriptions[code] || 'Unknown';
+        }
+
+        /**
+         * Maps WMO weather codes to emoji icons for a visual representation.
+         * @param {number} code - The WMO weather code.
+         * @returns {string} - The emoji icon.
+         */
+        function getWeatherIcon(code) {
+            if (code === 0) return '☀️'; // Clear sky
+            if (code >= 1 && code <= 3) return '⛅️'; // Mainly clear, partly cloudy, overcast
+            if (code === 45 || code === 48) return '🌫️'; // Fog
+            if (code >= 51 && code <= 57) return '💧'; // Drizzle
+            if (code >= 61 && code <= 67) return '🌧️'; // Rain
+            if (code >= 71 && code <= 77) return '❄️'; // Snow
+            if (code >= 80 && code <= 86) return '🌦️'; // Showers
+            if (code >= 95 && code <= 99) return '⛈️'; // Thunderstorm
+            return '❓';
+        }
+
+    </script>
+</body>
+</html>
